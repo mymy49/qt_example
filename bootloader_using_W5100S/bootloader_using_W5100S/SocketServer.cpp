@@ -1,10 +1,16 @@
 #include "SocketServer.h"
 #include <QTcpSocket>
 
+#define STX		0x02
+#define ECHO	0x0E
+#define ETX		0x03
+
 SocketServer::SocketServer(QTcpSocket *socket, int id, QObject *parent) : QThread(parent)
 {
 	mSocket = socket;
 	mId = id;
+	mRcvData = new unsigned char[512];
+	mState = 0;
 
 	connect(socket, &QTcpSocket::readyRead, this, &SocketServer::handler_readyRead);
 	connect(socket, &QTcpSocket::disconnected, this, &SocketServer::handler_disconnected);
@@ -12,22 +18,142 @@ SocketServer::SocketServer(QTcpSocket *socket, int id, QObject *parent) : QThrea
 
 void SocketServer::run(void)
 {
-
+	delete mRcvData;
 }
 
 void SocketServer::handler_readyRead(void)
 {
-	char buf[512];
+	int len;
+	char *rcvData;
+	unsigned char data;
 
-	for(int i=0;i<512;i+=2)
+	mRcvBuf = mSocket->readAll();
+	len = mRcvBuf.length();
+	rcvData = mRcvBuf.data();
+
+	for(int i=0;i<len;i++)
 	{
-		*(short*)&buf[i] = i/2;
-	}
+		data = rcvData[i];
+		switch(mState)
+		{
+		case 0 : // 0x02 확인
+			if(data == STX)
+				mState = 1;
+			mRcvHeader.stx = 0x02;
+			break;
 
-	mSocket->write(buf, 512);
+		case 1 : // 명령 수신
+			mRcvHeader.message = data;
+			mState = 2;
+			break;
+
+		case 2 : // size 첫번째 수신
+			mRcvHeader.size = data;
+			mState = 3;
+			break;
+
+		case 3 : // size 두번째 수신
+			mRcvHeader.size |= (unsigned short)data << 8;
+			mState = 4;
+			break;
+
+		case 4 : // index 첫번째 수신
+			mRcvHeader.index = data;
+			mState = 5;
+			break;
+
+		case 5 : // size 두번째 수신
+			mRcvHeader.index |= (unsigned short)data << 8;
+			mState = 6;
+			break;
+
+		case 6 : // 0x0E 확인
+			if(data == ECHO)
+			{
+				if(mRcvHeader.size > 0)
+				{
+					mState = 7;
+					mRcvDataCount = 0;
+				}
+				else
+					mState = 8;
+				mRcvHeader.echo = 0x0E;
+			}
+			else
+				mState = 0;
+			break;
+
+		case 7 : // 데이터 수신
+			if(mRcvDataCount < mRcvHeader.size)
+			{
+				mRcvData[mRcvDataCount++] = data;
+			}
+			else
+				mState = 8;
+			break;
+
+		case 8 : // ETX 확인
+			if(data == ETX)
+				mState = 9;
+			else
+				mState = 0;
+			break;
+
+		case 9 : // 체크섬 확인
+			if(data == mRcvChksum)
+			{
+				handleMessage();
+			}
+			mState = 0;
+			break;
+		}
+
+		if(mState == 1)
+			mRcvChksum = 0x02;
+		else
+			mRcvChksum ^= data;
+	}
 
 //	mSocket->close();
 //	emit closed(mId);
+}
+
+void SocketServer::respondMessage(unsigned char message, unsigned char *data, unsigned short size)
+{
+	ProtocolHeader header;
+	ProtocolTail tail;
+
+	unsigned char chksum = 0, *buf;
+	header.message = message;
+	header.index = mRcvHeader.index;
+	header.size = size;
+
+	buf = (unsigned char*)&header;
+	for(unsigned int i=0;i<sizeof(header);i++)
+		chksum ^= buf[i];
+
+	for(int i=0;i<size;i++)
+		chksum ^= data[i];
+
+	chksum ^= ETX;
+	tail.chksum = chksum;
+
+	mSocket->write((const char*)&header, sizeof(header));
+	if(size)
+		mSocket->write((const char*)data, size);
+	mSocket->write((const char*)&tail, sizeof(tail));
+}
+
+
+void SocketServer::handleMessage(void)
+{
+	switch(mRcvHeader.message)
+	{
+	case 0 :
+		respondMessage(MSG_I_AM_FINE, 0, 0);
+		break;
+
+	}
 }
 
 void SocketServer::handler_disconnected(void)
