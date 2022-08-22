@@ -1,16 +1,18 @@
 #include "SocketServer.h"
 #include <QTcpSocket>
+#include <mainwindow.h>
 
 #define STX		0x02
 #define ECHO	0x0E
 #define ETX		0x03
 
-SocketServer::SocketServer(QTcpSocket *socket, int id, QObject *parent) : QThread(parent)
+SocketServer::SocketServer(QTcpSocket *socket, int id, MainWindow *parent) : QThread((QObject*)parent)
 {
 	mSocket = socket;
 	mId = id;
 	mRcvData = new unsigned char[512];
 	mState = 0;
+	mParent = parent;
 
 	connect(socket, &QTcpSocket::readyRead, this, &SocketServer::handler_readyRead);
 	connect(socket, &QTcpSocket::disconnected, this, &SocketServer::handler_disconnected);
@@ -113,9 +115,6 @@ void SocketServer::handler_readyRead(void)
 		else
 			mRcvChksum ^= data;
 	}
-
-//	mSocket->close();
-//	emit closed(mId);
 }
 
 void SocketServer::respondMessage(unsigned char message, unsigned char *data, unsigned short size)
@@ -144,20 +143,38 @@ void SocketServer::respondMessage(unsigned char message, unsigned char *data, un
 	mSocket->write((const char*)&tail, sizeof(tail));
 }
 
-
 void SocketServer::handleMessage(void)
 {
+	char sendBuf[512];
+	int packet;
+
 	switch(mRcvHeader.message)
 	{
-	case 0 :
+	case MSG_HOW_ARE_YOU :
 		respondMessage(MSG_I_AM_FINE, 0, 0);
 		break;
 
+	case MSG_HAVE_YOU_NEW_FIRMWARE :
+		if(mParent->isFileLoaded())
+			respondMessage(MSG_YES_I_HAVE, 0, 0);
+		else
+			respondMessage(MSG_NO_I_HAVE_NOT, 0, 0);
+		break;
+
+	case MSG_GIVE_ME_TOTAL_PACKET :
+		packet = mParent->getPacketCount();
+		*(unsigned int*)&sendBuf[0] = packet;
+		respondMessage(MSG_IT_IS_TOTAL_PACKET, (unsigned char*)sendBuf, 4);
+		break;
+
+	default :
+		respondMessage(MSG_I_DON_T_KNOW, 0, 0);
+		break;
 	}
 }
 
 void SocketServer::handler_disconnected(void)
 {
-
+	emit closed(mId);
 }
 

@@ -23,15 +23,26 @@ public:
 	MainWindow(QWidget *parent = nullptr);
 	~MainWindow();
 
+	bool isFileLoaded(void);
+	unsigned int getPacketCount(void);
+
 private slots:
 	void handler_newConnection(void);
 
 	void handler_closed(int id);
 
+	void on_pushButton_clicked();
+
 private:
 	Ui::MainWindow *ui;
 	QTcpServer *mServer;
 	SocketServer *mSocketServer[MAX_SOCKET_SERVER];
+
+	unsigned char *mBinFile;
+	QString mFileName;
+	unsigned int mFileSize, mPacketCount;
+	bool mFileLoadFlag;
+
 	int mServerCount;
 };
 #endif // MAINWINDOW_H
