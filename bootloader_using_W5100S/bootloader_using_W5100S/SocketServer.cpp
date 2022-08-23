@@ -1,6 +1,7 @@
 #include "SocketServer.h"
 #include <QTcpSocket>
 #include <mainwindow.h>
+#include <string.h>
 
 #define STX		0x02
 #define ECHO	0x0E
@@ -86,11 +87,9 @@ void SocketServer::handler_readyRead(void)
 			break;
 
 		case 7 : // 데이터 수신
-			if(mRcvDataCount < mRcvHeader.size)
-			{
-				mRcvData[mRcvDataCount++] = data;
-			}
-			else
+			mRcvData[mRcvDataCount++] = data;
+
+			if(mRcvDataCount >= mRcvHeader.size)
 				mState = 8;
 			break;
 
@@ -145,7 +144,7 @@ void SocketServer::respondMessage(unsigned char message, unsigned char *data, un
 
 void SocketServer::handleMessage(void)
 {
-	char sendBuf[512];
+	unsigned char sendBuf[512], *firmware;
 	int packet;
 
 	switch(mRcvHeader.message)
@@ -164,7 +163,15 @@ void SocketServer::handleMessage(void)
 	case MSG_GIVE_ME_TOTAL_PACKET :
 		packet = mParent->getPacketCount();
 		*(unsigned int*)&sendBuf[0] = packet;
-		respondMessage(MSG_IT_IS_TOTAL_PACKET, (unsigned char*)sendBuf, 4);
+		respondMessage(MSG_IT_IS_TOTAL_PACKET, sendBuf, 4);
+		break;
+
+	case MSG_GIVE_ME_FIRMWARE_PACKET :
+		packet = *(unsigned int*)&mRcvData[0];
+		firmware = mParent->getFirmwareBinary();
+		*(unsigned int*)&sendBuf[0] = packet;
+		memcpy(&sendBuf[4], &firmware[packet*256], 256);
+		respondMessage(MSG_IT_IS_FIRMWARE_PACKET, sendBuf, 256+4);
 		break;
 
 	default :

@@ -25,6 +25,7 @@ public:
 
 	bool isFileLoaded(void);
 	unsigned int getPacketCount(void);
+	unsigned char* getFirmwareBinary(void);
 
 private slots:
 	void handler_newConnection(void);

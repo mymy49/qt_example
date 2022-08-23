@@ -109,4 +109,8 @@ unsigned int MainWindow::getPacketCount(void)
 	return packetCount;
 }
 
+unsigned char* MainWindow::getFirmwareBinary(void)
+{
+	return mBinFile;
+}
 
